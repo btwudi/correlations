@@ -1,0 +1,120 @@
+## function to determine the association between gene expression and enhancer methylation
+## input: eRNA list(eRNA.file as .csv), eRNA methy value, gene exp,
+ge_methy_association <- function(eRNA.file, eRNA.gene.pairs, tcga.data.list, cf.mat)
+{
+        pv1 = NULL;
+        eff1 = NULL;
+        id_test = NULL;
+        
+        eRNA_gene <- readRDS(eRNA.gene.pairs)
+        id = 1:dim(eRNA_gene)[1];
+        tcga.data <- readRDS(tcga.data.list)
+        eRNA.me.value <- eRNA_methy_value(eRNA.file, tcga.data.list)
+        # can save your eRNA methylation value at this step if you'd like
+        
+        for(i in 1:length(rownames(eRNA.me.value)))
+        {
+                gene.list <- eRNA_gene[eRNA_gene[,1] == rownames(eRNA.me.value)[i], , drop=FALSE][,2];
+                if (length(gene.list) == 0)
+                        next;
+                id_test = c(id_test, id[eRNA_gene[,1] == rownames(eRNA.me.value)[i]]);
+                for(j in 1:length(gene.list))
+                {
+                        fit = lm(as.numeric(tcga.data[[2]][gene.list[j],])~as.numeric(eRNA.me.value[rownames(eRNA.me.value)[i],])+cf.mat) #tcga.data[[2]] is gene expression
+                        pv1 = c(pv1, summary(fit)$coefficients[2,4]);
+                        eff1 = c(eff1, summary(fit)$coefficients[2,1]);
+                }
+                print(i)
+        }
+        qv1 = p.adjust(pv1, "fdr"); ##fdr control, multiple comparison control
+        eRNA.me_gene_profile <- data.frame(cbind(eRNA_gene[id_test,1:2],qv1,eff1))
+        names(eRNA.me_gene_profile) <- c("eRNA", "gene", "q-value (gene-eRNA)","coefficient (gene-eRNA)")
+        return(eRNA.me_gene_profile)
+}
+
+
+
+
+
+
+## e.g. bed1 = eRNA file with loci, bed2 = methylation file with loci
+## format should be as follows:
+## bed1:
+##  "chr1" "10" "20"   
+##  "chr1" "50" "60"   
+##  "chr1" "80" "90"  
+## bed2 (the No. 5 column should be beta values):
+##  "chr1" "12" "14" "+" "2"  
+##  "chr1" "13" "15" "-" "5"  
+##  "chr1" "16" "18" "+" "5"  
+##  "chr1" "82" "85" "+" "2"  
+##  "chr1" "85" "87" "+" "3"  
+eRNA_methy_value <- function(eRNA.file, tcga.data.list)
+{
+        eRNA <- read.csv(eRNA.file)
+        e.names <- eRNA$X
+        en <- unlist((sapply(1:length(e.names), function(i) length(unlist(strsplit(e.names[i], "_"))))))
+        ind = (en == 3)
+        en <- e.names[ind]
+        e.names <- as.data.frame(t(sapply(1:length(en), function(i) unlist(strsplit(en[i], "_")))))
+        colnames(e.names) <- c("chr", "start", "end")
+        bed1 <- e.names
+        
+        tcga.data <- readRDS(tcga.data.list)
+        bed2 <- tcga.data$methy.probe.beta
+        #bed2.comp = bed2[complete.cases(bed2),]
+        bed2.loc = bed2[,1:4]
+        bed2.loc.comp = bed2.loc[complete.cases(bed2.loc),]
+        ind.complete = match(rownames(bed2.loc.comp), rownames(bed2))
+        bed2.complete = bed2[ind.complete,]
+        
+        library(GenomicRanges)
+        eRNA.gr = GRanges(seqnames = bed1$chr, IRanges(start=as.numeric(bed1$start), end=as.numeric(bed1$end)))
+        probe.gr = makeGRangesFromDataFrame(bed2.complete,
+                                            keep.extra.columns=TRUE,
+                                            ignore.strand=FALSE,
+                                            seqinfo=NULL,
+                                            seqnames.field=c("seqnames", "seqname",
+                                                             "chromosome", "chrom",
+                                                             "chr", "chromosome_name",
+                                                             "seqid"),
+                                            start.field="start",
+                                            end.field=c("end"),
+                                            strand.field="strand",
+                                            starts.in.df.are.0based=FALSE)
+        probe.map <- subsetByOverlaps(probe.gr, eRNA.gr)
+        probe.map = sort(probe.map, ignore.strand=TRUE)
+        eRNA.map = subsetByOverlaps(eRNA.gr, probe.gr)
+        
+        library(Repitools)
+        eRNA.list = annoGR2DF(eRNA.map)
+        eRNA.names = paste(eRNA.list$chr, eRNA.list$start, eRNA.list$end, sep = "_")
+        
+        me.mean = data.frame(matrix(nrow = 1, ncol = (ncol(bed2.complete)-4)))
+        colnames(me.mean) = colnames(bed2[5:ncol(bed2)])
+        for (i in 1:length(eRNA.map))
+        {
+                gr = eRNA.map[i,]
+                ms <- subsetByOverlaps(probe.map, gr)
+                ms = sort(ms, ignore.strand=TRUE)
+                #value = mcols(ms, use.names=FALSE) # discard rownames
+                value = mcols(ms)
+                me.mean = rbind(me.mean, apply(value,2,mean))
+                print(i)
+        }
+        me.mean.final = me.mean[-1,]
+        rownames(me.mean.final) = eRNA.names
+        return(me.mean.final)
+}
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+
+
