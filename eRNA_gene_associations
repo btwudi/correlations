@@ -1,0 +1,22 @@
+gene_eRNA_association <- function(eRNA.gene.pairs, tcga.data.list, cf.mat)
+{
+        pv1 = NULL;
+        eff1 = NULL;
+        tcga.data <- readRDS(tcga.data.list)
+        gene.exp <- as.matrix(tcga.data[[2]])
+        #gene.exp <- gene.exp[complete.cases(gene.exp),]
+        eRNA.exp <- as.matrix(tcga.data[[1]])
+        #eRNA.exp <- eRNA.exp[complete.cases(eRNA.exp),]
+        eRNA_gene_pairs <- readRDS(eRNA.gene.pairs)
+        for(i in seq_len(dim(eRNA_gene_pairs)[1]))
+        {
+                fit = lm(gene.exp[eRNA_gene_pairs[i,2],]~as.numeric(eRNA.exp[eRNA_gene_pairs[i,1],]) + cf.mat)
+                pv1 = c(pv1, summary(fit)$coefficients[2,4]);
+                eff1 = c(eff1, summary(fit)$coefficients[2,1]);
+                print(i)
+        }
+        qv1 = p.adjust(pv1, "fdr"); ##fdr control, multiple comparison control
+        gene_eRNA_profile <- data.frame(cbind(eRNA_gene_pairs, qv1, eff1))
+        names(gene_eRNA_profile) <- c("eRNA", "gene", "q-value (gene-eRNA)","coefficient (gene-eRNA)")
+        return(gene_eRNA_profile)
+}
