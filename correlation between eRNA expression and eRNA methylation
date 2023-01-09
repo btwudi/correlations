@@ -1,0 +1,49 @@
+## function to calculate the correlation between eRNA expression and eRNA methylation
+## input: TCGA514 data list, eRNA methylation mean beta values, idh.type ("WT", or "Mutant")
+## output: q-value and correlation for each eRNA
+## to minimize the bias generated from sample number differences, do random sampling 100 times for 100 samples
+
+e.m.correlation = function(data.list, methy.value, idh.type)
+{
+        me = as.matrix(readRDS(methy.value))
+        
+        data = readRDS(data.list)
+        eRNA.exp = data$eRNA.exp.tpm
+        idh = data$IDH.status
+        samples = idh[idh$IDH.status == idh.type,] 
+        ind.e = match(samples$Case, colnames(eRNA.exp))
+        eRNA.exp = eRNA.exp[,ind.e]
+        ind.row = match(rownames(me), rownames(eRNA.exp))
+        eRNA.exp = eRNA.exp[ind.row,]
+        
+        qv = data.frame(matrix(NA, nrow = nrow(eRNA.exp), ncol = 100))
+        cor100 = data.frame(matrix(NA, nrow = nrow(eRNA.exp), ncol = 100))
+        for (n in 1:100)
+        {
+                sample100 = samples[sample(nrow(samples), 100), ]
+                ind.e100 = match(sample100$Case, colnames(eRNA.exp))
+                eRNA100 = eRNA.exp[, ind.e100]
+                ind.m100 = match(sample100$Case, colnames(me))
+                me100 = me[, ind.m100]
+                
+                pv = NULL
+                cor = NULL
+                for (i in 1:nrow(eRNA.exp))
+                {
+                        test = cor.test(eRNA100[rownames(eRNA100) == rownames(eRNA.exp)[i],],
+                                        me100[rownames(me100) == rownames(eRNA.exp)[i],], 
+                                        method = "spearman")
+                        pv = c(pv, test$p.value)
+                        cor = c(cor, test$estimate)
+                }
+                qv[,n] = p.adjust(pv, "fdr") ##fdr control, multiple comparison control
+                cor100[,n] = cor
+                print(n)
+        }
+        eRNA_me_cor <- data.frame(cbind(rownames(eRNA.exp), qv, cor100))
+        colnames(eRNA_me_cor) <- c("eRNA", rep("q_value", 100), rep("correlation", 100))
+        return(eRNA_me_cor)
+}
+
+
+
